@@ -7,6 +7,8 @@ using LukeSkywalker.IPNetwork;
 using System.Diagnostics;
 using System.Net;
 using NLog;
+using Fclp;
+using System.Threading;
 
 namespace IPUrlSweep
 {
@@ -14,6 +16,9 @@ namespace IPUrlSweep
     {
         static List<IPAddress> m_sHits = new List<IPAddress>();
         static Logger _log = LogManager.GetCurrentClassLogger();
+        static int _threadCount = 0;
+        static int _maxThreads = 1;
+        static object lockObject = new object();
 
         static bool DNSMatch(IPAddress addr, string Domain)
         {
@@ -37,7 +42,7 @@ namespace IPUrlSweep
             return false;
         }
 
-        static int GetResource(string Url)
+        static int GetResource(string Url, out string Content)
         {
             int code = 0;
 
@@ -45,7 +50,7 @@ namespace IPUrlSweep
             {
                 WebClient cli = new WebClient();
 
-                string Content = cli.DownloadString(new Uri(Url));
+                Content = cli.DownloadString(new Uri(Url));
 
                 code = 200;
 
@@ -60,82 +65,172 @@ namespace IPUrlSweep
                     code = Convert.ToInt32(response.StatusCode);
                     _log.Debug("{0} returned status code {1}", Url, code);
                 }
+
+                Content = string.Empty;
             }
 
             return code;
         }
 
-        static void ProcessRange(string Range, string Pattern, string Code, string targetDNS)
+        static void ProcessRange(string Range, string Pattern, string Code, string SearchString, string targetDNS)
         {
             IPNetwork network = IPNetwork.Parse(Range);
             IPAddressCollection addresses = IPNetwork.ListIPAddress(network);
             int expectedCode = Int32.Parse(Code);
             foreach (IPAddress address in addresses)
             {
+
+                // wait until a thread is free
+                while (_threadCount >= _maxThreads) { Thread.Sleep(100); }
+                // Start the threads
+                Task.Run(()=>ProcessAddress(Pattern, SearchString, targetDNS, expectedCode, address));
+                // increase the thread count
+                lock (lockObject)
+                {
+                    _threadCount++;
+                }
+
                 Console.CursorLeft = 0;
                 Console.CursorTop = 0;
-                _log.Debug("Address: {0}", address.ToString());
+                _log.Debug("Address:    {0}", address.ToString());
                 Console.Write("Address:     {0}         ", address.ToString());
 
-                bool targetMatch = false;
+                Console.CursorLeft = 0;
+                Console.CursorTop = 1;
+                _log.Debug("Threads:    {0}", _threadCount);
+                Console.Write("Threads:     {0}         ", _threadCount);
+            }
+        }
 
-                if (targetDNS != string.Empty)
+        private static void ProcessAddress(string Pattern, string SearchString, string targetDNS, int expectedCode, IPAddress address)
+        {
+            bool targetMatch = false;
+
+            if (targetDNS != "*")
+            {
+                targetMatch = DNSMatch(address, targetDNS);
+            }
+            else
+            {
+                targetMatch = true;
+            }
+
+            if (targetMatch)
+            {
+                string url = "http://" + address.ToString() + "/" + Pattern;
+                string content = string.Empty;
+                _log.Debug("DNS Match.... created url {0}", url);
+                bool bHit = false;
+
+                int resp = GetResource(url, out content);
+
+                if (resp == expectedCode)
                 {
-                    targetMatch = DNSMatch(address, targetDNS);
-                }
-                else
-                {
-                    targetMatch = true;
-                }
-
-                if (targetMatch)
-                {
-                    
-                    string url = "http://" + address.ToString() + "/" + Pattern;
-
-                    _log.Debug("DNS Match.... created url {0}", url);
-
-                    int resp = GetResource(url);
-
-                    if (resp == expectedCode)
+                    // now check for search string
+                    if (SearchString != "*")
                     {
-                        m_sHits.Add(address);
-                        Console.CursorLeft = 0;
-                        Console.CursorTop = 1;
-                        _log.Debug("Address: {0} Code: {1} Expected: {2}", address.ToString(), resp, expectedCode);
-                        Console.Write("Address:     {0}         Code:           {1}     Expected:       {2}     **Confirmed**", address.ToString(), resp, expectedCode);
+                        // check to see if there are any hits in the content
+                        if (content.Contains(SearchString))
+                        {
+                            bHit = true;
+                        }
+                        else
+                        {
+                            bHit = false;
+                        }
                     }
                     else
                     {
-                        _log.Debug("Address: {0} Wanted: {1} Responded with: {2}", address, expectedCode, resp);
+                        bHit = true;
+                    }
+
+                    if (bHit)
+                    {
+                        m_sHits.Add(address);
+                        Console.CursorLeft = 0;
+                        Console.CursorTop = 2;
+                        _log.Debug("Address: {0} Code: {1} Expected: {2}", address.ToString(), resp, expectedCode);
+                        Console.Write("Address:     {0}         Code:           {1}     Expected:       {2}     **Confirmed**", address.ToString(), resp, expectedCode);
                     }
                 }
+                else
+                {
+                    _log.Debug("Address: {0} Wanted: {1} Responded with: {2}", address, expectedCode, resp);
+                }
             }
+
+            lock (lockObject)
+            {
+                // We are finishing, so decrease the thread count
+                _threadCount--;
+            }
+        }
+
+        public class AppArgs
+        {
+            public string AddressRange { get; set; }
+            public string Pattern { get; set; }
+            public string StatusCode { get; set; }
+            public string SearchString { get; set; }
+            public string DNSName { get; set; }
+            public int Threads { get; set; }
         }
 
         // Usage IPUrlSweep IPRange,..,.. URLPattern HTTPStatusCode
         static void Main(string[] args)
         {
             Stopwatch watch = new Stopwatch();
-            if (args.Length < 3)
+
+            var commandLineParser = new FluentCommandLineParser<AppArgs>();
+
+            commandLineParser.Setup(arg => arg.AddressRange)
+                .As('r', "range")
+                .Required();
+
+            commandLineParser.Setup(arg => arg.Pattern)
+                .As('p', "pattern")
+                .Required();
+
+            commandLineParser.Setup(arg => arg.StatusCode)
+                .As('c', "code")
+                .SetDefault("200");
+
+            commandLineParser.Setup(arg => arg.SearchString)
+                .As('s', "search")
+                .SetDefault("*");
+
+            commandLineParser.Setup(arg => arg.DNSName)
+                .As('d', "dnsname")
+                .SetDefault("*");
+
+            commandLineParser.Setup(arg => arg.Threads)
+                .As('t', "threads")
+                .SetDefault(1);
+
+            var Result = commandLineParser.Parse(args);
+            if (Result.HasErrors && Result.UnMatchedOptions.Count() != 0)
             {
                 _log.Error("Invalid command line.....");
-                Console.WriteLine("Usage: IPUrlSweep IPRange,...,... URLPattern HTTPStatusCode");
+                Console.WriteLine("Usage: IPUrlSweep");
+                Console.WriteLine("     --r or --range IPRange,...,... ");
+                Console.WriteLine("     --p or --pattern URLPattern ");
+                Console.WriteLine("     --c or --code HTTPStatusCode (Optional)"); 
+                Console.WriteLine("     --s or --search search content for string (Optional)");
+                Console.WriteLine("     --d or --dnsname dns name match for ip address (Optional)");
+                Console.WriteLine("     --t or --threads number of concurrent threads (Optional)");
                 return;
             }
 
-            string target = args[0];
-            string pattern = args[1];
-            string code = args[2];
-            string targetDNS = string.Empty;
-            if (args.Length == 4)
-            {
-                
-                targetDNS = args[3];
-            }
+            string target = commandLineParser.Object.AddressRange;
+            string pattern = commandLineParser.Object.Pattern;
+            string code = commandLineParser.Object.StatusCode;
+            string searchString = commandLineParser.Object.SearchString;
+            string targetDNS = commandLineParser.Object.DNSName;
+            _maxThreads = commandLineParser.Object.Threads;
 
             _log.Debug("Address Range: {0}", target);
             _log.Debug("URL Pattern: {0}", pattern);
+            _log.Debug("Search String: {0}", searchString);
             _log.Debug("Required Response Code: {0}", code);
             _log.Debug("Target DNS: {0}", targetDNS);
 
@@ -148,13 +243,13 @@ namespace IPUrlSweep
 
                 foreach (string range in ranges)
                 {
-                    ProcessRange(range, pattern, code, targetDNS);
+                    ProcessRange(range, pattern, code, searchString, targetDNS);
                 }
             }
             else
             {
                 // Single range
-                ProcessRange(target, pattern, code, targetDNS);
+                ProcessRange(target, pattern, code, searchString, targetDNS);
             }
 
             watch.Stop();
