@@ -72,7 +72,7 @@ namespace CloudUnFlare
 
         public static bool MailmanInPlay(string Target)
         {
-            string mmUrl = "https://" + Target + "/Mailman/Admin/Mailman";
+            string mmUrl = "https://" + Target + "/mailman/admin/mailman";
             string content = string.Empty;
 
             if (GetResource(mmUrl, out content) == 200)
