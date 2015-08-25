@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebBrute", "WebBrute\WebBru
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IPUrlSweep", "IPUrlSweep\IPUrlSweep.csproj", "{2AECB820-6ADC-4D26-B865-A21D2C20B10C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CloudUnFlare", "CloudUnFlare\CloudUnFlare.csproj", "{3E1254E4-831C-4EAA-BFC0-C01F3985B037}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{2AECB820-6ADC-4D26-B865-A21D2C20B10C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2AECB820-6ADC-4D26-B865-A21D2C20B10C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2AECB820-6ADC-4D26-B865-A21D2C20B10C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3E1254E4-831C-4EAA-BFC0-C01F3985B037}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3E1254E4-831C-4EAA-BFC0-C01F3985B037}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3E1254E4-831C-4EAA-BFC0-C01F3985B037}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3E1254E4-831C-4EAA-BFC0-C01F3985B037}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
